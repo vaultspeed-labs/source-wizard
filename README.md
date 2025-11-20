@@ -1,8 +1,8 @@
 # VaultSpeed Source Wizard
 
-A Streamlit application for creating sources in VaultSpeed using the vaultspeed_sdk. This wizard guides you through the complete process of setting up a new source, from authentication to configuration. It gives guidance in the process of setting up the source parameters for a new source. 
+A Streamlit-based wizard that simplifies the complex process of creating and configuring sources in VaultSpeed. Instead of navigating through hundreds of parameters manually, this interactive questionnaire guides you step-by-step through the most critical configuration decisions, helping in making the parameter process more understandable.
 
-This tool is aimed to support customers to more thouroughly understand the most forgotten/important parameters hidden in the long list of parameters supported by VaultSpeed
+The wizard focuses on the parameters that are most commonly forgotten, misunderstood, or incorrectly configured by users, transforming the overwhelming parameter list into a manageable, guided experience.
 
 ## 🚀 Quick Start
 
@@ -56,7 +56,7 @@ The VaultSpeed Source Wizard guides you through the following steps:
 2. **Prerequisites** - Check system prerequisites
 3. **Source Creation** - Create a new source
 4. **System Parameters** - Configure system-level settings
-5. **Important Parameters** - Configure key source parameters
+5. **Important Parameters** - Configure important source parameters
 6. **CDC Configuration** - Set up Change Data Capture settings
 7. **Completion** - Source is ready to use in VaultSpeed
 
@@ -68,7 +68,7 @@ On the login screen, you'll need to provide:
 - **Username** - Your VaultSpeed username
 - **Password** - Your VaultSpeed password
 
-After authenticating you get guided through the creation of a complete source, focussing on the most important parameters or the parameters that are forgotten/wrongfully set by users.
+After authenticating you get guided through the creation of a complete source, focussing on the most important parameters or the parameters that are forgotten/wrongfully set by users the most.
 
 ## 📁 Project Structure
 
