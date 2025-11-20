@@ -58,7 +58,7 @@ def main():
     )
 
     # Main UI
-    st.title("VaultSpeed Source Creation Wizard")
+    st.title("VaultSpeed Source Wizard")
     st.write("This wizard will guide you through the process of creating a new source in VaultSpeed.")
     
     # Step routing
