@@ -1,7 +1,5 @@
 import streamlit as st
 
-st.session_state.setdefault("prereq_reset_id", 0)
-
 def check_all_projects_for_source(system):
     try:
         for project in system.projects:
@@ -17,13 +15,17 @@ def dialog_window(system):
             st.rerun()
     if st.button("Close"):
         st.session_state.pop("prerequisite_conf", None)
-        st.session_state["prereq_reset_id"] += 1
+        if 'prereq_reset_id' not in st.session_state:
+            st.session_state.prereq_reset_id = 0
+        st.session_state.prereq_reset_id += 1
         st.rerun()
 
 
 def check_prerequisites(system):
     st.header("Step 0: Prerequisites")
-    radio_key = f"prerequisite_conf_{st.session_state['prereq_reset_id']}"
+    if 'prereq_reset_id' not in st.session_state:
+        st.session_state.prereq_reset_id = 0
+    radio_key = f"prerequisite_conf_{st.session_state.prereq_reset_id}"
     st.session_state.prerequisite_confirmed = st.radio(
         "Have system parameters been set?",
         ["Yes", "No"],

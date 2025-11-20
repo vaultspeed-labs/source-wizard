@@ -2,6 +2,7 @@ import streamlit as st
 from vaultspeed_sdk.client import Client, TaskConfig
 from vaultspeed_sdk.client import UserPasswordAuthentication
 from vaultspeed_sdk.system import System
+from vaultspeed_sdk.exceptions.unauthorized import UnauthorizedException
 
 from .prerequisites import check_prerequisites
 from .impParam import get_important_params
@@ -11,28 +12,36 @@ from .systemParam import get_system_params, get_system_params_continue
 from .contact_sales import contact_sales
 # from .dataProfiling import data_profiling
 
-def authenticate(username, password):
+def authenticate(api_url, username, password):
     """Authenticate with VaultSpeed API."""
-    auth = UserPasswordAuthentication(
-        api_url="https://training-eu.vaultspeed.com/api", 
-        username=username, 
-        password=password
-    )
-    client = Client(
-        base_url="https://training-eu.vaultspeed.com/api", 
-        auth=auth, 
-        retries=2, 
-        timeout=120, 
-        caller="docs", 
-        task_config=TaskConfig(
-            polling_interval=10, 
-            timeout=0, 
-            queue_timeout=600, 
-            show_progress=True
+    try:
+        auth = UserPasswordAuthentication(
+            api_url=api_url, 
+            username=username, 
+            password=password
         )
-    )
-    system = System(client=client)  
-    st.session_state.system = system
+        client = Client(
+            base_url=api_url, 
+            auth=auth, 
+            retries=2, 
+            timeout=120, 
+            caller="docs", 
+            task_config=TaskConfig(
+                polling_interval=10, 
+                timeout=0, 
+                queue_timeout=600, 
+                show_progress=True
+            )
+        )
+        system = System(client=client)  
+        st.session_state.system = system
+        return True
+    except UnauthorizedException:
+        st.error("Authentication failed: Incorrect username or password. Please check your credentials and try again.")
+        return False
+    except Exception as e:
+        st.error(f"An error occurred during authentication: {str(e)}")
+        return False
 
 
 def main():
@@ -82,14 +91,18 @@ def main():
 def _render_login_step():
     """Render the login step."""
     st.header("Log in to VaultSpeed")
+    api_url = st.text_input(
+        "VaultSpeed API URL", 
+        value="https://app.vaultspeed.com/api",
+        help="Enter the VaultSpeed API URL (e.g., https://app.vaultspeed.com/api)"
+    )
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     
     if st.button("Next"):
-        authenticate(username, password)
-        st.session_state.step = "prerequisites"
-        st.rerun()
-
+        if authenticate(api_url, username, password):
+            st.session_state.step = "prerequisites"
+            st.rerun()
 
 def _render_projects_step():
     """Render the projects selection step."""
@@ -105,8 +118,10 @@ def _render_projects_step():
 
 def _render_data_profiling_step():
     """Render the data profiling step."""
-    st.header("Data Profiling")
-    st.write("Data profiling is not yet implemented")
+    # TODO: Implement data profiling step here
+    st.header("Source successfully created")
+    st.write("The source is now useable in VaultSpeed")
+
 
 
 if __name__ == "__main__":

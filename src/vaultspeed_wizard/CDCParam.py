@@ -65,13 +65,29 @@ def ask_logposition(source):
     return logposition_available, st.session_state.get("logposition", "")
 
 def cdc_type(source):
+    existing_cdc_load = st.session_state.get("cdc_load")
+
+    options = ["Full", "Incremental"]
+    if existing_cdc_load in options:
+        index = options.index(existing_cdc_load)
+    else:
+        index = None
+    
     cdc_load = question_with_docs_and_radio(
         "The dataset that is available in my landing zone is Incrementally loaded or does it contain a Full dataset from the source?",
         "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CDC_LOAD-[-CHAR-]",
-        ["Full", "Incremental"],
-        index=None,
+        options,
+        index=index,
         key="cdc_load"
     )
+
+    if cdc_load is None and existing_cdc_load is not None:
+        cdc_load = existing_cdc_load
+    
+    # Save a backup of the value when it's valid (for recovery in landing_schema)
+    if cdc_load is not None:
+        st.session_state["_cdc_load_backup"] = cdc_load
+    
     dataset_options = get_options("cdc", cdc_load)
     if cdc_load and dataset_options:
         cdc_type_val = question_with_docs_and_radio(
@@ -92,12 +108,19 @@ def cdc_type(source):
                 if cdc_type_val in ["Modification Date", "Modification Sequence", "Modification Flag & Date"]:
                     has_microseconds = check_cdc_timestamp()
                     logposition_available, logposition = ask_logposition(source)
-                    if (
-                        has_microseconds is not None and
-                        logposition_available is not None and
-                        (logposition_available == "No" or (logposition_available == "Yes" and logposition != ""))
-                    ):
-                        if st.button("Next"):
+                    
+                    missing_fields = []
+                    if has_microseconds is None:
+                        missing_fields.append("CDC timestamp microseconds")
+                    if logposition_available is None:
+                        missing_fields.append("log position availability")
+                    elif logposition_available == "Yes" and logposition == "":
+                        missing_fields.append("log position attribute name")
+                    
+                    if st.button("Next"):
+                        if missing_fields:
+                            st.error(f"Please fill in the required fields")
+                        else:
                             st.session_state.step = "cdc_params"
                             st.rerun()
             cdc_mapping = get_cdc_type_mapping(cdc_load, cdc_type_val)
@@ -110,42 +133,74 @@ def cdc_type(source):
 
 # Step 8
 def landing_schema(source):
-    if st.session_state.get("cdc_load") == "Incremental":
-        st.session_state.landing_schema_incremental = question_with_docs_and_text_input("In what schema is the data landed for incremental loading?",
-                                                                                         "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#SCHEMA_INI-[-CHAR-]",
-                                                                                         "Schema")
-        st.session_state.landing_schema_initial = question_with_docs_and_text_input("In what schema is the data landed for initial loading?",
-                                                                                     "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#SCHEMA_CDC-[-CHAR-]",
-                                                                                     "Schema")
-        if st.session_state.get("landing_schema_incremental", "") != "" and st.session_state.get("landing_schema_initial", "") != "":
-            set_parameter_if_exists(source.parameters, "SCHEMA_INI", str(st.session_state.landing_schema_incremental))
-            set_parameter_if_exists(source.parameters, "SCHEMA_CDC", str(st.session_state.landing_schema_initial))
-        if st.session_state.get("landing_schema_incremental", "") != "" and st.session_state.get("landing_schema_initial", "") != "":
-            st.session_state.create_table_option = st.multiselect(
-                "Does VaultSpeed have to create the tables in the landing zone?",
-                ["Create CDC Table", "Create Initial Table"],
-            )
-            set_parameter_if_exists(source.parameters, "CREATE_CDC_TABLES", "Y" if "Create CDC Table" in st.session_state.create_table_option else "N")
-            set_parameter_if_exists(source.parameters, "CREATE_INI_TABLES", "Y" if "Create Initial Table" in st.session_state.create_table_option else "N")
-    else:
-        st.session_state.landing_schema = question_with_docs_and_text_input("In what schema is the data landed?",
-                                                                             "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#SCHEMA_INI-[-CHAR-]",
-                                                                             "Schema")
+    cdc_load = st.session_state.get("cdc_load")
+    
+    # If cdc_load is None, try to restore it from backup
+    if cdc_load is None:
+        backup_cdc_load = st.session_state.get("_cdc_load_backup")
+        if backup_cdc_load is not None:
+            cdc_load = backup_cdc_load
+    
+    if cdc_load == "Incremental":
+        # Get current values before rendering
+        current_incremental = st.session_state.get("landing_schema_incremental", "")
+        current_initial = st.session_state.get("landing_schema_initial", "")
+        
+        st.session_state.landing_schema_incremental = question_with_docs_and_text_input(
+            "In what schema is the data landed for incremental loading?",
+            "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#SCHEMA_INI-[-CHAR-]",
+            placeholder="Schema",
+            value=current_incremental,
+            key="landing_schema_incremental_input"
+        )
+        
+        st.session_state.landing_schema_initial = question_with_docs_and_text_input(
+            "In what schema is the data landed for initial loading?",
+            "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#SCHEMA_CDC-[-CHAR-]",
+            placeholder="Schema",
+            value=current_initial,
+            key="landing_schema_initial_input"
+        )
+        
+        # Only set parameters when values are provided (don't process empty strings)
+        landing_schema_incremental = st.session_state.get("landing_schema_incremental", "")
+        if landing_schema_incremental != "":
+            set_parameter_if_exists(source.parameters, "SCHEMA_INI", str(landing_schema_incremental))
+        
+        landing_schema_initial = st.session_state.get("landing_schema_initial", "")
+        if landing_schema_initial != "":
+            set_parameter_if_exists(source.parameters, "SCHEMA_CDC", str(landing_schema_initial))
+            
+    elif cdc_load == "Full":
+        current_schema = st.session_state.get("landing_schema", "")
+        
+        st.session_state.landing_schema = question_with_docs_and_text_input(
+            "In what schema is the data landed?",
+            "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#SCHEMA_INI-[-CHAR-]",
+            placeholder="Schema",
+            value=current_schema,
+            key="landing_schema_input"
+        )
+        
         if st.session_state.get("landing_schema", "") != "":
             set_parameter_if_exists(source.parameters, "SCHEMA_INI", st.session_state.landing_schema)
             set_parameter_if_exists(source.parameters, "SCHEMA_CDC", st.session_state.landing_schema)
-            st.session_state.create_table_option = question_with_docs_and_multiselect(
-                "Does VaultSpeed have to create the tables in the landing zone?",
-                "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CREATE_INI_TABLES-[-Y-or-N-]",
-                ["Create CDC Table", "Create Initial Table"],
-                value=["Create CDC Table", "Create Initial Table"],
-            )
-            if st.session_state.create_table_option == ["Create CDC Table", "Create Initial Table"]:
-                set_parameter_if_exists(source.parameters, "CREATE_INI_TABLES", "Y")
-                set_parameter_if_exists(source.parameters, "CREATE_CDC_TABLES", "Y")
-            elif st.session_state.create_table_option == "Don't Create Tables":
-                set_parameter_if_exists(source.parameters, "CREATE_INI_TABLES", "N")
-                set_parameter_if_exists(source.parameters, "CREATE_CDC_TABLES", "N")
+
+    
+    st.session_state.create_table_option = question_with_docs_and_multiselect(
+        "Does VaultSpeed have to create the tables in the landing zone?",
+        "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CREATE_INI_TABLES-[-Y-or-N-]",
+        ["Create CDC Table", "Create Initial Table"],
+        value=st.session_state.get("create_table_option", ["Create CDC Table", "Create Initial Table"]),
+        key="create_table_option_select"
+    )
+    
+    if st.session_state.create_table_option == ["Create CDC Table", "Create Initial Table"]:
+        set_parameter_if_exists(source.parameters, "CREATE_INI_TABLES", "Y")
+        set_parameter_if_exists(source.parameters, "CREATE_CDC_TABLES", "Y")
+    elif st.session_state.create_table_option == "Don't Create Tables":
+        set_parameter_if_exists(source.parameters, "CREATE_INI_TABLES", "N")
+        set_parameter_if_exists(source.parameters, "CREATE_CDC_TABLES", "N")
 
 def landing_table(source):
     st.session_state.same_name_source = question_with_docs_and_radio(
@@ -182,6 +237,26 @@ def oracle_DWH(source):
             index=None,
         )
         if st.session_state.cdc_tables_inside_dwh == "Yes":
+            pass
+        else:
+            st.session_state.remote_dblink_name = question_with_docs_and_text_input("What is the name of the DBLink to the source database?",
+                                                                                     "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#REMOTE_CDC_DBLINK_NAME-[-CHAR-]",
+                                                                                     "Value")
+        st.session_state.remote_delta_view = question_with_docs_and_radio(
+            "Is a loading window table in the source and views on the source CDC tables needed to filter records within the current loading window?",
+            "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#REMOTE_DELTA_VIEW-[-Y-or-N-]",
+            ["Yes", "No"],
+            index=None,
+        )
+    elif st.session_state.oracle_dwh == "No":
+        if st.button("Next"):
+            st.session_state.step = "data_profiling"
+            st.rerun()
+
+def apply_oracle_DWH_parameters(source):
+    """Apply Oracle DWH parameters based on user selections. Called when Next is pressed."""
+    if st.session_state.get("oracle_dwh") == "Yes":
+        if st.session_state.get("cdc_tables_inside_dwh") == "Yes":
             if source.parameters.CREATE_REMOTE_DELTA_VIEW.value == "N":
                 set_parameter_if_exists(source.parameters, "REMOTE_JOURNALING_TABLES", "Y")
                 set_parameter_if_exists(source.parameters, "CREATE_REMOTE_DELTA_VIEW", "Y")
@@ -189,30 +264,19 @@ def oracle_DWH(source):
             set_parameter_if_exists(source.parameters, "REMOTE_JOURNALING_TABLES", "N")
         else:
             set_parameter_if_exists(source.parameters, "REMOTE_JOURNALING_TABLES", "Y")
-            st.session_state.remote_dblink_name = question_with_docs_and_text_input("What is the name of the DBLink to the source database?",
-                                                                                     "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#REMOTE_CDC_DBLINK_NAME-[-CHAR-]",
-                                                                                     "Value")
-            if st.session_state.remote_dblink_name != "":
+            if st.session_state.get("remote_dblink_name", "") != "":
                 set_parameter_if_exists(source.parameters, "REMOTE_CDC_DBLINK_NAME", st.session_state.remote_dblink_name)
-                if st.session_state.use_remote_cdc_dblink == "Y":
+                if st.session_state.get("use_remote_cdc_dblink") == "Y":
                     set_parameter_if_exists(source.parameters, "USE_REMOTE_CDC_DBLINK", "N")
                 set_parameter_if_exists(source.parameters, "CREATE_REMOTE_DELTA_VIEW", "Y")
                 set_parameter_if_exists(source.parameters, "USE_REMOTE_CDC_DBLINK", "Y")
-        st.session_state.remote_delta_view = question_with_docs_and_radio(
-            "Is a loading window table in the source and views on the source CDC tables needed to filter records within the current loading window?",
-            "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#REMOTE_DELTA_VIEW-[-Y-or-N-]",
-            ["Yes", "No"],
-            index=None,
-        )
-        if st.session_state.remote_delta_view == "Yes":
+        
+        if st.session_state.get("remote_delta_view") == "Yes":
             set_parameter_if_exists(source.parameters, "REMOTE_JOURNALING_TABLES", "Y")
             set_parameter_if_exists(source.parameters, "CREATE_REMOTE_DELTA_VIEW", "Y")
         else:
             set_parameter_if_exists(source.parameters, "CREATE_REMOTE_DELTA_VIEW", "N")
             set_parameter_if_exists(source.parameters, "REMOTE_JOURNALING_TABLES", "N")
-    elif st.session_state.oracle_dwh == "No":
-        if st.button("Next"):
-            st.session_state.step = "data_profiling"
 
 def cdc_update_record_all_attributes(source):
     st.session_state.update_record_all_attributes = question_with_docs_and_radio(
@@ -222,17 +286,11 @@ def cdc_update_record_all_attributes(source):
         index=None,
     )
     if st.session_state.update_record_all_attributes == "Yes":
-        set_parameter_if_exists(source.parameters, "CDC_UPDATE_RECORD_ALL_ATTRIBUTES", "Y")
         types = ["CHAR", "NUMBER", "DATE", "TIME", "TIMESTAMP", "OTHER"]
         st.session_state.no_change_indication = question_with_docs_and_selectbox("What special value should be used to mask unchanged values within each attribute?", 
                                                                                  "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#NO_CHANGE_INDICATION-[-CHAR-]", 
                                                                                   types, value="")
-        if st.session_state.no_change_indication is not None:
-            for t in types:
-                attr_name = f"NO_CHANGE_INDICATION_{t}"
-                set_parameter_if_exists(source.parameters, attr_name, "Y" if st.session_state.no_change_indication == t else "N")
     else:
-        set_parameter_if_exists(source.parameters, "CDC_UPDATE_RECORD_ALL_ATTRIBUTES", "N")
         st.session_state.preimage_records = question_with_docs_and_radio(
             "Does the CDC system provide pre-image records?",
             "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CDC_PRE_IMAGE_AVAILABLE-[-Y-or-N-]",
@@ -240,37 +298,50 @@ def cdc_update_record_all_attributes(source):
             index=None,
         )
         if st.session_state.preimage_records == "Yes":
-            set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_AVAILABLE", "Y")
             st.session_state.preimage_column = question_with_docs_and_text_input("In what column is this stored?",
                                                                                        "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CDC_PRE_POST_IMAGE_FLAG-[-CHAR-]",
                                                                                        "Value")
-            if st.session_state.preimage_column != "":
-                set_parameter_if_exists(source.parameters, "CDC_PRE_POST_IMAGE_FLAG", st.session_state.preimage_column)
             st.session_state.preimage_unique_key = question_with_docs_and_text_input("What is the unique indicator that links the pre- and post-image together?",
                                                                                        "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CDC_PRE_IMAGE_UNIQUE_KEY-[-CHAR-]",
                                                                                        "Value")
-            if st.session_state.preimage_unique_key != "":
-                set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_UNIQUE_KEY", st.session_state.preimage_unique_key)
             st.session_state.preimage_flag_value = question_with_docs_and_text_input("What is the value of the pre-image flag?",
                                                                                        "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CDC_PRE_IMAGE_FLAG_VALUE-[-CHAR-]",
                                                                                        "Value")
-            if st.session_state.preimage_flag_value != "":
-                set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_FLAG_VALUE", st.session_state.postimage_flag_value)
             st.session_state.postimage_flag_value = question_with_docs_and_text_input("What is the value of the post-image flag?",
                                                                                        "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#CDC_POST_IMAGE_FLAG_VALUE-[-CHAR-]",
                                                                                        "Value")
-            if st.session_state.postimage_flag_value != "":
-                set_parameter_if_exists(source.parameters, "CDC_POST_IMAGE_FLAG_VALUE", st.session_state.postimage_flag_value)
-            # TODO update questions
-        else:
-            set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_AVAILABLE", "N")
     st.session_state.lcl_timestamp_for_initial_load = question_with_docs_and_radio(
         "Will the Load Cycle Info timestamp be used for the initial load or the timestamp from the source?",
         "https://docs.vaultspeed.com/space/VPD/3012755470/Parameter+Descriptions#USE_LCI_TIMESTAMP_FOR_INITIAL_LOAD-[-Y-or-N-]",
         ["Load Cycle", "Source Timestamp"],
         index=None,
     )
-    if st.session_state.lcl_timestamp_for_initial_load == "Load Cycle":
+
+def apply_cdc_update_record_all_attributes_parameters(source):
+    """Apply CDC update record parameters based on user selections. Called when Next is pressed."""
+    if st.session_state.get("update_record_all_attributes") == "Yes":
+        set_parameter_if_exists(source.parameters, "CDC_UPDATE_RECORD_ALL_ATTRIBUTES", "Y")
+        types = ["CHAR", "NUMBER", "DATE", "TIME", "TIMESTAMP", "OTHER"]
+        if st.session_state.get("no_change_indication") is not None:
+            for t in types:
+                attr_name = f"NO_CHANGE_INDICATION_{t}"
+                set_parameter_if_exists(source.parameters, attr_name, "Y" if st.session_state.no_change_indication == t else "N")
+    else:
+        set_parameter_if_exists(source.parameters, "CDC_UPDATE_RECORD_ALL_ATTRIBUTES", "N")
+        if st.session_state.get("preimage_records") == "Yes":
+            set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_AVAILABLE", "Y")
+            if st.session_state.get("preimage_column", "") != "":
+                set_parameter_if_exists(source.parameters, "CDC_PRE_POST_IMAGE_FLAG", st.session_state.preimage_column)
+            if st.session_state.get("preimage_unique_key", "") != "":
+                set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_UNIQUE_KEY", st.session_state.preimage_unique_key)
+            if st.session_state.get("preimage_flag_value", "") != "":
+                set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_FLAG_VALUE", st.session_state.preimage_flag_value)
+            if st.session_state.get("postimage_flag_value", "") != "":
+                set_parameter_if_exists(source.parameters, "CDC_POST_IMAGE_FLAG_VALUE", st.session_state.postimage_flag_value)
+        else:
+            set_parameter_if_exists(source.parameters, "CDC_PRE_IMAGE_AVAILABLE", "N")
+    
+    if st.session_state.get("lcl_timestamp_for_initial_load") == "Load Cycle":
         set_parameter_if_exists(source.parameters, "USE_LCI_TIMESTAMP_FOR_INITIAL_LOAD", "Y")
     else:
         set_parameter_if_exists(source.parameters, "USE_LCI_TIMESTAMP_FOR_INITIAL_LOAD", "N")
@@ -285,6 +356,8 @@ def cdc_params(source):
                 cdc_update_record_all_attributes(source)
                 if 'lcl_timestamp_for_initial_load' in st.session_state and st.session_state.lcl_timestamp_for_initial_load != None:
                     if st.button("Next"):
+                        apply_oracle_DWH_parameters(source)
+                        apply_cdc_update_record_all_attributes_parameters(source)
                         st.session_state.step = "data_profiling"
                         st.rerun()
 

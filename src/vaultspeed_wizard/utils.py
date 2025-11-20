@@ -2,14 +2,20 @@ import os
 import ast
 import streamlit as st
 from streamlit import expander, markdown
+from vaultspeed_sdk.exceptions.parameter_value_conflict import ParameterValueConflictException
 
 def set_parameter_if_exists(parameters, param_name, value):
     """
     Sets the value of a parameter if it exists on the parameters object.
+    Handles parameter value conflicts gracefully by showing user-friendly error messages.
     """
     if hasattr(parameters, param_name):
-        setattr(getattr(parameters, param_name), 'value', value)
-        parameters.save()
+        try:
+            setattr(getattr(parameters, param_name), 'value', value)
+            parameters.save()
+        except ParameterValueConflictException as e:
+            error_message = str(e)
+            st.error(f"Parameter conflict: {error_message}")
 
 def question_with_docs_and_radio(
     question: str,

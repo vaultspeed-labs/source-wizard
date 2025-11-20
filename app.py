@@ -8,7 +8,6 @@ Run this file to start the Streamlit application.
 import sys
 import os
 
-# Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from vaultspeed_wizard.main import main
