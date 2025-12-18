@@ -102,6 +102,8 @@ The project has minimal dependencies:
 
 ## Data Profiling
 
+Add the venv with requirements.txt installed
+
 ```py
 streamlit run src/vaultspeed_wizard/dataProfiling.py
 ```
