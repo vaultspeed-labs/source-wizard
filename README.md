@@ -98,3 +98,14 @@ The project has minimal dependencies:
 
 - **streamlit** - Web application framework
 - **vaultspeed-sdk** - VaultSpeed Python SDK installed through the [`pip.conf`](pip.conf)
+
+
+## Data Profiling
+
+```py
+streamlit run src/vaultspeed_wizard/dataProfiling.py
+```
+
+![image](select.png)
+
+![image](image.png)
