@@ -1,0 +1,38 @@
+# docker-compose.yaml — local development environment
+#
+# This file tells Docker how to run your app (and any services it depends on)
+# locally. Think of it as the "run configuration" for your containers.
+#
+# Usage:
+#   docker compose up --build     Start everything (rebuild images first)
+#   docker compose up              Start everything (use cached images)
+#   docker compose down            Stop and remove containers
+#
+# The private vaultspeed_sdk requires credentials. Provide them locally with:
+#   export VAULTSPEED_USERNAME=...
+#   export VAULTSPEED_PASSWORD=...
+#   docker compose build --secret id=vaultspeed_username,env=VAULTSPEED_USERNAME \
+#                        --secret id=vaultspeed_password,env=VAULTSPEED_PASSWORD
+
+services:
+
+  # ── Source Wizard (Streamlit app) ─────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - vaultspeed_username
+        - vaultspeed_password
+    ports:
+      - "8501:8501"
+      # ↑ host:container
+      #   host      — the port you open in your browser (http://localhost:8501)
+      #   container — the port Streamlit listens on INSIDE the container
+      #              (must match EXPOSE in the Dockerfile)
+
+secrets:
+  vaultspeed_username:
+    environment: VAULTSPEED_USERNAME
+  vaultspeed_password:
+    environment: VAULTSPEED_PASSWORD

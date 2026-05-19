@@ -14,6 +14,7 @@ jobs:
     uses: vaultspeed-labs/github-workflows/.github/workflows/grype.yaml@main
     with:
       image-tag: ${{ github.event.repository.name }}:scan
+    secrets: inherit
 
   docker:
     needs: scan
