@@ -5,12 +5,47 @@ on:
     branches: [main]
 
 jobs:
-  secrets:
-    uses: vaultspeed-labs/github-workflows/.github/workflows/trufflehog.yaml@main
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-  validate:
-    uses: vaultspeed-labs/github-workflows/.github/workflows/grype.yaml@main
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
 
-  # Add repo-specific jobs below (e.g. unit tests, linting).
-  # All top-level jobs run in parallel by default.
-  # To run a job after another, add `needs: [job-name]`.
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: ${{ github.event.repository.name }}:pr-${{ github.event.number }}
+          secrets: |
+            vaultspeed_username=${{ secrets.VAULTSPEED_USERNAME }}
+            vaultspeed_password=${{ secrets.VAULTSPEED_PASSWORD }}
+
+      - name: Install Grype
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Update Grype vulnerability database
+        run: grype db update
+
+      - name: Scan image for critical vulnerabilities
+        run: grype ${{ github.event.repository.name }}:pr-${{ github.event.number }} --fail-on critical --only-fixed -o table
