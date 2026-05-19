@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - '.cursor/**'
       - '.vscode/**'
+  workflow_dispatch:
 
 jobs:
   scan:
