@@ -1,0 +1,14 @@
+.git
+.github
+.cursor
+.dockerignore
+docker-compose.yaml
+Dockerfile
+README.md
+*.md
+venv
+__pycache__
+*.pyc
+.pytest_cache
+*.png
+pip.conf
