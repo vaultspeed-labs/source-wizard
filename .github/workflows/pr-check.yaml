@@ -1,0 +1,16 @@
+name: PR validation
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  secrets:
+    uses: vaultspeed-labs/github-workflows/.github/workflows/trufflehog.yaml@main
+
+  validate:
+    uses: vaultspeed-labs/github-workflows/.github/workflows/grype.yaml@main
+
+  # Add repo-specific jobs below (e.g. unit tests, linting).
+  # All top-level jobs run in parallel by default.
+  # To run a job after another, add `needs: [job-name]`.
