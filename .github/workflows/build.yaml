@@ -1,0 +1,21 @@
+name: Build and push Docker image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.cursor/**'
+      - '.vscode/**'
+
+jobs:
+  scan:
+    uses: vaultspeed-labs/github-workflows/.github/workflows/grype.yaml@main
+    with:
+      image-tag: ${{ github.event.repository.name }}:scan
+
+  docker:
+    needs: scan
+    uses: vaultspeed-labs/github-workflows/.github/workflows/docker.yaml@main
+    secrets: inherit
